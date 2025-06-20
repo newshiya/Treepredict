@@ -3,14 +3,27 @@ import pandas as pd
 import numpy as np
 import joblib
 from keras.models import load_model
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
+# --- Model and Preprocessor Loading ---
+try:
+    dis_model = joblib.load("disintegration_model.pkl")
+except Exception as e:
+    st.error(f"Error loading disintegration model: {e}")
+    st.stop()
 
-# Load models
-dis_model = joblib.load("disintegration_model.pkl")
-diss_model = load_model("dissolution_model.h5")
+try:
+    diss_model = load_model("dissolution_model.h5")
+except Exception as e:
+    st.error(f"Error loading dissolution model: {e}")
+    st.stop()
 
-# UI
+try:
+    preprocessor = joblib.load("preprocessor.pkl")
+except Exception as e:
+    st.error(f"Error loading preprocessor: {e}")
+    st.stop()
+
+# --- UI ---
+
 st.title("🧪 FormuPredict: AI for Disintegration & Dissolution")
 binder = st.selectbox("Binder", ["PVP", "PEG"])
 dis = st.selectbox("Disintegrant", ["Starch", "SSG", "Crosspovidone"])
@@ -22,22 +35,33 @@ hardness = st.slider("Tablet Hardness (kg/cm²)", 1.0, 10.0, 6.0)
 input_df = pd.DataFrame([[binder, dis, ratio, force, ph, hardness]],
                         columns=['Binder', 'Disintegrant', 'Ratio_Binder_Dis', 'Compression_Force', 'pH', 'Hardness'])
 
-# Predict disintegration time
-dis_time = dis_model.predict(input_df)[0]
+# --- Prediction ---
 
-# Encode for NN model
-preprocessor = ColumnTransformer(transformers=[
-    ('cat', OneHotEncoder(), ['Binder', 'Disintegrant', 'Compression_Force'])
-], remainder='passthrough')
-X_transformed = preprocessor.fit_transform(input_df)
+# Disintegration time (scikit-learn)
+try:
+    dis_time = dis_model.predict(input_df)[0]
+except Exception as e:
+    st.error(f"Error predicting disintegration time: {e}")
+    st.stop()
 
-# Predict dissolution
-diss_pred = diss_model.predict(X_transformed)[0]
+# Dissolution (Neural Network)
+try:
+    X_transformed = preprocessor.transform(input_df)
+    diss_pred = diss_model.predict(X_transformed)[0]
+except Exception as e:
+    st.error(f"Error predicting dissolution: {e}")
+    st.stop()
 
-# Output
+# --- Output ---
+
 st.subheader("Prediction Results")
 st.write(f"🕐 Disintegration Time: **{int(dis_time)} seconds**")
-st.line_chart({
-    "Dissolution %": diss_pred,
-    "Time (h)": [2, 4, 6]
-})
+
+# Check output shape for dissolution prediction
+if len(diss_pred) != 3:
+    st.error("Dissolution model output shape is incorrect. Expected 3 values for 2h, 4h, 6h.")
+else:
+    chart_df = pd.DataFrame({
+        "Dissolution %": diss_pred
+    }, index=[2, 4, 6])
+    st.line_chart(chart_df)
